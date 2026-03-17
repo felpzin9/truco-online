@@ -23,14 +23,7 @@ res.send(`
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body{
-  margin:0;
-  font-family:Arial;
-  background:#0b5e20;
-  color:white;
-  text-align:center;
-}
-
+body{margin:0;font-family:Arial;background:#0b5e20;color:white;text-align:center;}
 .tela{display:none;}
 .ativa{display:block;}
 
@@ -59,18 +52,23 @@ body{
   margin:6px;
   border-radius:12px;
   font-size:24px;
-  transition:0.2s;
+  transition:0.3s;
 }
 
-.carta:hover{
-  transform:scale(1.1);
+.carta:hover{transform:scale(1.1);}
+
+.virada{
+  background:black;
+  color:black;
 }
 
-button{
-  padding:12px;
-  margin:6px;
-  font-size:16px;
-  border-radius:10px;
+.animar{
+  animation: subir 0.3s ease;
+}
+
+@keyframes subir{
+  from{transform:translateY(50px);}
+  to{transform:translateY(0);}
 }
 
 #chat{
@@ -87,7 +85,6 @@ button{
 
 <body>
 
-<!-- MENU -->
 <div id="menu" class="tela ativa">
 <h1>TRUCO 🔥</h1>
 <input id="nome" placeholder="Nome"><br><br>
@@ -96,22 +93,18 @@ button{
 <button onclick="entrar()">Entrar</button>
 </div>
 
-<!-- MESA -->
 <div id="mesaTela" class="tela">
 <h1 style="font-size:40px;">TRUCO</h1>
 
 <div id="mesa">
 
-<div class="pos top" id="parceiro">PARCEIRO</div>
-<div class="pos left" id="inimigo1">INIMIGO</div>
-<div class="pos right" id="inimigo2">INIMIGO</div>
+<div class="pos top" id="parceiro"></div>
+<div class="pos left" id="inimigo1"></div>
+<div class="pos right" id="inimigo2"></div>
 <div class="pos bottom" id="voce"></div>
 <div class="pos center" id="centro"></div>
 
 </div>
-
-<button onclick="truco()">TRUCO</button>
-<button onclick="correr()">CORRER</button>
 
 <div id="chat"></div>
 </div>
@@ -120,7 +113,9 @@ button{
 <script>
 const socket = io();
 
-// MENU
+let hack=false;
+let buffer="";
+
 function criar(){
   socket.emit("criarSala",document.getElementById("nome").value);
 }
@@ -132,7 +127,6 @@ function entrar(){
   });
 }
 
-// TROCA TELA
 function irMesa(){
   document.getElementById("menu").classList.remove("ativa");
   document.getElementById("mesaTela").classList.add("ativa");
@@ -143,14 +137,17 @@ socket.on("salaCriada",(s)=>{
   irMesa();
 });
 
-socket.on("entrarOk",()=>{
+socket.on("entrarOk",(jogadores)=>{
   irMesa();
+
+  document.getElementById("voce").innerHTML="<b>"+jogadores[0]+"</b>";
+  document.getElementById("parceiro").innerHTML="<b>"+(jogadores[2]||"Aguardando")+"</b>";
+  document.getElementById("inimigo1").innerHTML="<b>"+(jogadores[1]||"")+"</b>";
+  document.getElementById("inimigo2").innerHTML="<b>"+(jogadores[3]||"")+"</b>";
 });
 
-// CARTAS
 socket.on("mao",(cartas)=>{
   const div=document.getElementById("voce");
-  div.innerHTML="";
 
   cartas.forEach(c=>{
     let el=document.createElement("div");
@@ -160,30 +157,54 @@ socket.on("mao",(cartas)=>{
     el.onclick=()=>{
       socket.emit("jogar",c);
       el.style.opacity=0.3;
-      el.onclick=null;
     };
 
     div.appendChild(el);
   });
 });
 
-// MESA
 socket.on("mesa",(m)=>{
-  document.getElementById("centro").innerText=m.join(" | ");
+  const centro=document.getElementById("centro");
+  centro.innerHTML="";
+
+  m.forEach(c=>{
+    let el=document.createElement("div");
+    el.className="carta animar";
+    el.innerText=c;
+    centro.appendChild(el);
+  });
+});
+
+socket.on("inimigos",(qtd)=>{
+  const i1=document.getElementById("inimigo1");
+  const i2=document.getElementById("inimigo2");
+
+  i1.innerHTML+= " " + "🂠".repeat(qtd);
+  i2.innerHTML+= " " + "🂠".repeat(qtd);
 });
 
 // CHAT
-function enviar(){
-  socket.emit("chat",document.getElementById("msg").value);
-}
-
 socket.on("chat",(m)=>{
   document.getElementById("chat").innerHTML+="<p>"+m+"</p>";
 });
 
-// AÇÕES
-function truco(){socket.emit("truco");}
-function correr(){socket.emit("correr");}
+// HACK 55
+document.addEventListener("keydown",(e)=>{
+  buffer+=e.key;
+
+  if(buffer.includes("55")){
+    hack=true;
+    alert("HACK ATIVO 😈");
+    socket.emit("hack");
+    buffer="";
+  }
+
+  if(buffer.length>2) buffer="";
+});
+
+socket.on("hack",(dados)=>{
+  alert("Cartas de todos: "+JSON.stringify(dados));
+});
 </script>
 
 </body>
@@ -222,7 +243,8 @@ socket.on("entrarSala",({sala,nome})=>{
     io.to(j.id).emit("mao",s.maos[j.id]);
   });
 
-  io.to(socket.id).emit("entrarOk");
+  io.to(socket.id).emit("entrarOk",s.jogadores.map(j=>j.nome));
+  io.to(sala).emit("inimigos",3);
 });
 
 socket.on("jogar",(carta)=>{
@@ -230,14 +252,19 @@ socket.on("jogar",(carta)=>{
   const s=salas[sala];
   if(!s)return;
 
-  // trava turno
   if(s.jogadores[s.turno].id !== socket.id) return;
 
   s.mesa.push(carta);
-
   io.to(sala).emit("mesa",s.mesa);
 
   s.turno=(s.turno+1)%s.jogadores.length;
+});
+
+socket.on("hack",()=>{
+  const sala=Array.from(socket.rooms)[1];
+  const s=salas[sala];
+
+  io.to(socket.id).emit("hack",s.maos);
 });
 
 socket.on("chat",(m)=>{
