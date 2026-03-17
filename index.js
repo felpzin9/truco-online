@@ -17,21 +17,35 @@ res.send(`
 <html>
 <head>
 <style>
-body{background:#0b5e20;color:white;text-align:center;font-family:Arial;}
-#mesa{display:none;}
-.carta{background:white;color:black;padding:15px;margin:5px;border-radius:10px;display:inline-block;}
-button{padding:10px;margin:5px;border-radius:8px;}
+body{
+  background:#0b5e20;
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
 
-#painelHack{
-display:none;
-position:fixed;
-top:50%;
-left:50%;
-transform:translate(-50%,-50%);
-background:black;
-padding:20px;
-border:3px solid red;
-z-index:999;
+#mesa{display:none;}
+
+button{
+  padding:10px;
+  margin:5px;
+  border-radius:8px;
+}
+
+.carta{
+  background:white;
+  color:black;
+  padding:15px;
+  margin:5px;
+  border-radius:10px;
+  display:inline-block;
+}
+
+#monte{
+  position:absolute;
+  top:20px;
+  right:20px;
+  font-size:40px;
 }
 </style>
 </head>
@@ -43,22 +57,30 @@ z-index:999;
 
 <input id="nome" placeholder="Seu nome"><br><br>
 
+<h3>Modo</h3>
+<button onclick="modo='1x1'">1x1</button>
+<button onclick="modo='2x2'">2x2</button>
+
+<h3>Tipo</h3>
+<button onclick="tipo='paulista'">Paulista</button>
+<button onclick="tipo='mineiro'">Mineiro</button>
+
+<br><br>
+
 <button onclick="criar()">Criar Sala</button><br><br>
 
-<input id="codigo" placeholder="Código da sala">
+<input id="codigo" placeholder="Código">
 <button onclick="entrar()">Entrar</button>
 
-<h3 id="codigoSala"></h3>
+<h3 id="infoSala"></h3>
 </div>
 
 <div id="mesa">
-<h2 id="info"></h2>
+<h2 id="topo"></h2>
+
+<div id="monte">🂠</div>
 
 <div id="cartas"></div>
-
-<button onclick="abrirHack()">😈 HACK</button>
-
-<br><br>
 
 <input id="msg">
 <button onclick="enviar()">Enviar</button>
@@ -66,37 +88,40 @@ z-index:999;
 <div id="chat"></div>
 </div>
 
-<div id="painelHack">
-<h2>😈 HACK</h2>
-<button onclick="verCartas()">Ver cartas</button><br><br>
-<button onclick="pegarCarta()">Pegar carta</button><br><br>
-<button onclick="fecharHack()">Fechar</button>
-</div>
-
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-let buffer="";
+
+let modo="1x1";
+let tipo="paulista";
 
 function criar(){
-  socket.emit("criarSala",document.getElementById("nome").value);
+  const nome=document.getElementById("nome").value;
+
+  socket.emit("criarSala",{nome,modo,tipo});
 }
 
 function entrar(){
-  socket.emit("entrarSala",{
-    sala:document.getElementById("codigo").value,
-    nome:document.getElementById("nome").value
-  });
+  const nome=document.getElementById("nome").value;
+  const sala=document.getElementById("codigo").value;
+
+  socket.emit("entrarSala",{sala,nome});
 }
 
-socket.on("salaCriada",(sala)=>{
-  document.getElementById("codigoSala").innerText="Sala: "+sala;
+socket.on("salaCriada",(dados)=>{
+  document.getElementById("infoSala").innerText=
+    "Sala: "+dados.codigo+" | "+dados.modo+" | "+dados.tipo;
+
+  // entra automático
+  socket.emit("entrarSala",{sala:dados.codigo,nome:document.getElementById("nome").value});
 });
 
-socket.on("entrou",(jogs)=>{
+socket.on("inicio",(dados)=>{
   document.getElementById("menu").style.display="none";
   document.getElementById("mesa").style.display="block";
-  document.getElementById("info").innerText="Jogadores: "+jogs.join(", ");
+
+  document.getElementById("topo").innerText=
+    "Modo: "+dados.modo+" | Tipo: "+dados.tipo;
 });
 
 socket.on("cartas",(cartas)=>{
@@ -117,48 +142,13 @@ socket.on("cartas",(cartas)=>{
   });
 });
 
-// CHAT
+// chat
 function enviar(){
   socket.emit("chat",document.getElementById("msg").value);
 }
 
 socket.on("chat",(m)=>{
   document.getElementById("chat").innerHTML+="<p>"+m+"</p>";
-});
-
-// ===== HACK =====
-
-function abrirHack(){
-  document.getElementById("painelHack").style.display="block";
-}
-
-function fecharHack(){
-  document.getElementById("painelHack").style.display="none";
-}
-
-// senha 55
-document.addEventListener("keydown",(e)=>{
-  buffer+=e.key;
-
-  if(buffer.includes("55")){
-    abrirHack();
-    buffer="";
-  }
-
-  if(buffer.length>2) buffer="";
-});
-
-function verCartas(){
-  socket.emit("hackVer");
-}
-
-function pegarCarta(){
-  let c=prompt("Carta (ex: A♠)");
-  socket.emit("hackPegar",c);
-}
-
-socket.on("hack",(dados)=>{
-  alert("Cartas: "+JSON.stringify(dados));
 });
 </script>
 
@@ -170,23 +160,30 @@ socket.on("hack",(dados)=>{
 // BACKEND
 io.on("connection",(socket)=>{
 
-socket.on("criarSala",(nome)=>{
-  const sala=Math.random().toString(36).substring(2,6);
+socket.on("criarSala",({nome,modo,tipo})=>{
+  const codigo=Math.random().toString(36).substring(2,6);
 
-  salas[sala]={
+  salas[codigo]={
     jogadores:[{id:socket.id,nome}],
+    modo,
+    tipo,
     maos:{}
   };
 
-  socket.join(sala);
-  socket.emit("salaCriada",sala);
+  socket.join(codigo);
+
+  socket.emit("salaCriada",{codigo,modo,tipo});
 });
 
 socket.on("entrarSala",({sala,nome})=>{
   const s=salas[sala];
   if(!s)return;
 
-  s.jogadores.push({id:socket.id,nome});
+  // evita duplicar jogador
+  if(!s.jogadores.find(j=>j.id===socket.id)){
+    s.jogadores.push({id:socket.id,nome});
+  }
+
   socket.join(sala);
 
   s.jogadores.forEach(j=>{
@@ -194,7 +191,7 @@ socket.on("entrarSala",({sala,nome})=>{
     io.to(j.id).emit("cartas",s.maos[j.id]);
   });
 
-  io.to(sala).emit("entrou",s.jogadores.map(j=>j.nome));
+  io.to(sala).emit("inicio",{modo:s.modo,tipo:s.tipo});
 });
 
 socket.on("jogar",(carta)=>{
@@ -205,23 +202,6 @@ socket.on("jogar",(carta)=>{
 socket.on("chat",(msg)=>{
   const sala=Array.from(socket.rooms)[1];
   io.to(sala).emit("chat",msg);
-});
-
-// HACK
-socket.on("hackVer",()=>{
-  const sala=Array.from(socket.rooms)[1];
-  io.to(socket.id).emit("hack",salas[sala].maos);
-});
-
-socket.on("hackPegar",(carta)=>{
-  const sala=Array.from(socket.rooms)[1];
-  const s=salas[sala];
-
-  if(!s.maos[socket.id]) return;
-
-  s.maos[socket.id].push(carta);
-
-  io.to(socket.id).emit("cartas",s.maos[socket.id]);
 });
 
 });
