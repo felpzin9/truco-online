@@ -6,7 +6,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.get("/", (req, res) => {
+app.use((req, res) => {
   res.send(`
     <h1>Truco Online 🔥</h1>
 
