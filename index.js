@@ -8,268 +8,243 @@ const io = new Server(server);
 
 let salas = {};
 
-function gerarBaralho(tipo) {
-  if (tipo === "mineiro") {
-    const valores = ["4","7","Q","J","K","A","2","3"];
-    const naipes = ["♦","♥"];
-    let baralho = [];
-
-    for (let n of naipes) {
-      for (let v of valores) {
-        baralho.push(v + n);
-      }
-    }
-
-    return baralho;
-  }
-
+function gerarBaralho() {
   const valores = ["4","5","6","7","Q","J","K","A","2","3"];
   const naipes = ["♠","♥","♦","♣"];
   let baralho = [];
-
-  for (let n of naipes) {
-    for (let v of valores) {
-      baralho.push(v + n);
-    }
-  }
-
-  return baralho;
+  for (let n of naipes) for (let v of valores) baralho.push(v+n);
+  return baralho.sort(()=>Math.random()-0.5);
 }
 
-function valorCarta(carta, tipo, vira) {
-  const ordem = ["4","5","6","7","Q","J","K","A","2","3"];
-  const v = carta.slice(0, -1);
+app.use((req,res)=>{
+res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  if (tipo === "mineiro") {
-    if (carta === "4♣") return 100;
-    if (carta === "7♦" || carta === "7♥") return 90;
-    return ordem.indexOf(v);
-  }
-
-  const valorVira = vira.slice(0, -1);
-  let index = ordem.indexOf(valorVira) + 1;
-  if (index >= ordem.length) index = 0;
-
-  const manilha = ordem[index];
-
-  if (v === manilha) {
-    return 100 + ["♣","♥","♠","♦"].indexOf(carta.slice(-1));
-  }
-
-  return ordem.indexOf(v);
+<style>
+body{
+  margin:0;
+  font-family:Arial;
+  background:#0b5e20;
+  color:white;
+  text-align:center;
 }
 
-app.use((req, res) => {
-  res.send(`
-  <html>
-  <head>
-    <style>
-      body { background:#0b5e20; color:white; text-align:center; font-family:Arial;}
-      .carta {display:inline-block;padding:15px;margin:5px;background:white;color:black;border-radius:10px;font-size:20px;}
-      #mesa {margin-top:20px;padding:20px;background:#146b2e;border-radius:10px;}
-      #chat {height:100px;overflow-y:auto;border:1px solid white;}
-    </style>
-  </head>
+.tela{display:none;}
+.ativa{display:block;}
 
-  <body>
+#mesa{
+  display:grid;
+  grid-template-areas:
+    "top"
+    "left center right"
+    "bottom";
+  height:100vh;
+}
 
-    <h1>Truco Online 🔥</h1>
+.pos{padding:10px;}
 
-    <input id="nome" placeholder="Seu nome"><br><br>
+.top{grid-area:top;}
+.left{grid-area:left;}
+.right{grid-area:right;}
+.bottom{grid-area:bottom;}
+.center{grid-area:center;}
 
-    <button onclick="setModo('1x1')">1x1</button>
-    <button onclick="setModo('2x2')">2x2</button>
+.carta{
+  display:inline-block;
+  background:white;
+  color:black;
+  padding:18px;
+  margin:6px;
+  border-radius:12px;
+  font-size:24px;
+  transition:0.2s;
+}
 
-    <br>
+.carta:hover{
+  transform:scale(1.1);
+}
 
-    <button onclick="setTipo('paulista')">Paulista</button>
-    <button onclick="setTipo('mineiro')">Mineiro</button>
+button{
+  padding:12px;
+  margin:6px;
+  font-size:16px;
+  border-radius:10px;
+}
 
-    <br><br>
+#chat{
+  position:fixed;
+  bottom:0;
+  right:0;
+  width:160px;
+  height:160px;
+  overflow:auto;
+  background:black;
+}
+</style>
+</head>
 
-    <button onclick="criar()">Criar Sala</button><br><br>
+<body>
 
-    <input id="sala" placeholder="Código">
-    <button onclick="entrar()">Entrar</button>
+<!-- MENU -->
+<div id="menu" class="tela ativa">
+<h1>TRUCO 🔥</h1>
+<input id="nome" placeholder="Nome"><br><br>
+<button onclick="criar()">Criar Sala</button><br><br>
+<input id="codigo" placeholder="Código">
+<button onclick="entrar()">Entrar</button>
+</div>
 
-    <h3 id="info"></h3>
+<!-- MESA -->
+<div id="mesaTela" class="tela">
+<h1 style="font-size:40px;">TRUCO</h1>
 
-    <div id="cartas"></div>
-    <div id="mesa"></div>
-    <h3 id="placar"></h3>
+<div id="mesa">
 
-    <button onclick="sinal()">🤫</button>
+<div class="pos top" id="parceiro">PARCEIRO</div>
+<div class="pos left" id="inimigo1">INIMIGO</div>
+<div class="pos right" id="inimigo2">INIMIGO</div>
+<div class="pos bottom" id="voce"></div>
+<div class="pos center" id="centro"></div>
 
-    <br><br>
+</div>
 
-    <input id="msg">
-    <button onclick="enviar()">Enviar</button>
-    <div id="chat"></div>
+<button onclick="truco()">TRUCO</button>
+<button onclick="correr()">CORRER</button>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-      const socket = io();
-      let modo="1x1", tipo="paulista";
+<div id="chat"></div>
+</div>
 
-      function setModo(m){modo=m;alert(m);}
-      function setTipo(t){tipo=t;alert(t);}
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
 
-      function criar(){
-        const nome=document.getElementById("nome").value;
-        socket.emit("criarSala",{nome,modo,tipo});
-      }
+// MENU
+function criar(){
+  socket.emit("criarSala",document.getElementById("nome").value);
+}
 
-      function entrar(){
-        const sala=document.getElementById("sala").value;
-        const nome=document.getElementById("nome").value;
-        socket.emit("entrarSala",{sala,nome});
-      }
+function entrar(){
+  socket.emit("entrarSala",{
+    sala:document.getElementById("codigo").value,
+    nome:document.getElementById("nome").value
+  });
+}
 
-      socket.on("salaCriada",s=>alert("Sala: "+s));
+// TROCA TELA
+function irMesa(){
+  document.getElementById("menu").classList.remove("ativa");
+  document.getElementById("mesaTela").classList.add("ativa");
+}
 
-      socket.on("info",txt=>{
-        document.getElementById("info").innerText=txt;
-      });
-
-      socket.on("vira",v=>{
-        document.getElementById("mesa").innerHTML="<h3>Vira: "+v+"</h3>";
-      });
-
-      socket.on("cartas",cartas=>{
-        const div=document.getElementById("cartas");
-        div.innerHTML="";
-        cartas.forEach(c=>{
-          const el=document.createElement("div");
-          el.className="carta";
-          el.innerText=c;
-          el.onclick=()=>{socket.emit("jogarCarta",c);el.remove();};
-          div.appendChild(el);
-        });
-      });
-
-      socket.on("mesa",m=>{
-        document.getElementById("mesa").innerHTML+= "<br>"+m.join(" | ");
-      });
-
-      socket.on("placar",p=>{
-        document.getElementById("placar").innerText=p[0]+" x "+p[1];
-      });
-
-      function sinal(){socket.emit("sinal","👀");}
-      socket.on("sinal",msg=>alert("Parceiro: "+msg));
-
-      function enviar(){
-        const msg=document.getElementById("msg").value;
-        socket.emit("chat",msg);
-      }
-
-      socket.on("chat",msg=>{
-        document.getElementById("chat").innerHTML+="<p>"+msg+"</p>";
-      });
-    </script>
-
-  </body>
-  </html>
-  `);
+socket.on("salaCriada",(s)=>{
+  alert("Código: "+s);
+  irMesa();
 });
 
-io.on("connection",(socket)=>{
+socket.on("entrarOk",()=>{
+  irMesa();
+});
 
-  socket.on("criarSala",(user)=>{
-    const sala=Math.random().toString(36).substring(2,6);
+// CARTAS
+socket.on("mao",(cartas)=>{
+  const div=document.getElementById("voce");
+  div.innerHTML="";
 
-    salas[sala]={
-      jogadores:[{id:socket.id,nome:user.nome}],
-      modo:user.modo,
-      tipo:user.tipo,
-      turno:0,
-      mesa:[],
-      pontos:[0,0],
-      vira:null
+  cartas.forEach(c=>{
+    let el=document.createElement("div");
+    el.className="carta";
+    el.innerText=c;
+
+    el.onclick=()=>{
+      socket.emit("jogar",c);
+      el.style.opacity=0.3;
+      el.onclick=null;
     };
 
-    socket.join(sala);
-    socket.emit("salaCriada",sala);
+    div.appendChild(el);
+  });
+});
+
+// MESA
+socket.on("mesa",(m)=>{
+  document.getElementById("centro").innerText=m.join(" | ");
+});
+
+// CHAT
+function enviar(){
+  socket.emit("chat",document.getElementById("msg").value);
+}
+
+socket.on("chat",(m)=>{
+  document.getElementById("chat").innerHTML+="<p>"+m+"</p>";
+});
+
+// AÇÕES
+function truco(){socket.emit("truco");}
+function correr(){socket.emit("correr");}
+</script>
+
+</body>
+</html>
+`);
+});
+
+// BACK
+io.on("connection",(socket)=>{
+
+socket.on("criarSala",(nome)=>{
+  const sala=Math.random().toString(36).substring(2,6);
+
+  salas[sala]={
+    jogadores:[{id:socket.id,nome}],
+    turno:0,
+    mesa:[],
+    maos:{}
+  };
+
+  socket.join(sala);
+  socket.emit("salaCriada",sala);
+});
+
+socket.on("entrarSala",({sala,nome})=>{
+  const s=salas[sala];
+  if(!s)return;
+
+  s.jogadores.push({id:socket.id,nome});
+  socket.join(sala);
+
+  const baralho=gerarBaralho();
+
+  s.jogadores.forEach(j=>{
+    s.maos[j.id]=baralho.splice(0,3);
+    io.to(j.id).emit("mao",s.maos[j.id]);
   });
 
-  socket.on("entrarSala",({sala,nome})=>{
-    if(!salas[sala])return;
+  io.to(socket.id).emit("entrarOk");
+});
 
-    const s=salas[sala];
+socket.on("jogar",(carta)=>{
+  const sala=Array.from(socket.rooms)[1];
+  const s=salas[sala];
+  if(!s)return;
 
-    s.jogadores.push({id:socket.id,nome});
-    socket.join(sala);
+  // trava turno
+  if(s.jogadores[s.turno].id !== socket.id) return;
 
-    const baralho=gerarBaralho(s.tipo).sort(()=>Math.random()-0.5);
+  s.mesa.push(carta);
 
-    if(s.tipo==="paulista"){
-      s.vira=baralho.pop();
-      io.to(sala).emit("vira",s.vira);
-    }
+  io.to(sala).emit("mesa",s.mesa);
 
-    s.jogadores.forEach(j=>{
-      io.to(j.id).emit("cartas",baralho.splice(0,3));
-    });
+  s.turno=(s.turno+1)%s.jogadores.length;
+});
 
-    io.to(sala).emit("info",
-      s.modo+" - "+s.tipo+" | "+s.jogadores.map(j=>j.nome).join(", ")
-    );
-  });
-
-  socket.on("jogarCarta",(carta)=>{
-    const sala=Array.from(socket.rooms)[1];
-    if(!sala)return;
-
-    const s=salas[sala];
-    const i=s.jogadores.findIndex(j=>j.id===socket.id);
-
-    if(i!==s.turno)return;
-
-    s.mesa.push({jogador:i,carta});
-
-    const limite = s.modo==="2x2"?4:2;
-
-    if(s.mesa.length===limite){
-      let vencedor=s.mesa[0];
-
-      s.mesa.forEach(j=>{
-        if(valorCarta(j.carta,s.tipo,s.vira)>
-           valorCarta(vencedor.carta,s.tipo,s.vira)){
-          vencedor=j;
-        }
-      });
-
-      const time=vencedor.jogador%2;
-      s.pontos[time]++;
-
-      io.to(sala).emit("placar",s.pontos);
-
-      s.mesa=[];
-    }
-
-    io.to(sala).emit("mesa",s.mesa.map(m=>m.carta));
-
-    s.turno=(s.turno+1)%s.jogadores.length;
-  });
-
-  socket.on("sinal",(msg)=>{
-    const sala=Array.from(socket.rooms)[1];
-    const s=salas[sala];
-
-    const i=s.jogadores.findIndex(j=>j.id===socket.id);
-    const parceiro=s.jogadores.find((_,idx)=>idx%2===i%2 && idx!==i);
-
-    if(parceiro){
-      io.to(parceiro.id).emit("sinal",msg);
-    }
-  });
-
-  socket.on("chat",(msg)=>{
-    const sala=Array.from(socket.rooms)[1];
-    io.to(sala).emit("chat",msg);
-  });
+socket.on("chat",(m)=>{
+  const sala=Array.from(socket.rooms)[1];
+  io.to(sala).emit("chat",m);
+});
 
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT,()=>console.log("Rodando..."));
+server.listen(process.env.PORT||3000);
