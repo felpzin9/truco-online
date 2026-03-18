@@ -10,11 +10,11 @@ let salas = {};
 
 function gerarBaralho(){
   const valores=["A","K","Q","J","7","6","5","4","3","2"];
-  const naipes=["espadas","copas","ouro","paus"];
+  const naipes=["♠","♥","♦","♣"];
   let baralho=[];
   valores.forEach(v=>{
     naipes.forEach(n=>{
-      baralho.push(v+" "+n);
+      baralho.push(v+n);
     });
   });
   return baralho.sort(()=>Math.random()-0.5);
@@ -24,11 +24,8 @@ app.get("/",(req,res)=>{
 res.send(`
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{margin:0;background:#0b5e20;color:white;font-family:Arial;text-align:center;}
-
-#mesa{display:none;height:100vh;}
 
 .grid{
 display:grid;
@@ -36,7 +33,7 @@ grid-template-areas:
 "top"
 "left center right"
 "bottom";
-height:100%;
+height:100vh;
 }
 
 .top{grid-area:top;}
@@ -53,10 +50,13 @@ margin:5px;
 border-radius:10px;
 display:inline-block;
 font-size:20px;
+position:relative;
+transition:all 0.5s ease;
 }
 
-#monte{
-font-size:40px;
+.anim{
+transform:translateY(-100px);
+opacity:0;
 }
 
 #painel{
@@ -68,6 +68,7 @@ transform:translate(-50%,-50%);
 background:black;
 padding:20px;
 border:3px solid red;
+z-index:999;
 }
 </style>
 </head>
@@ -76,32 +77,20 @@ border:3px solid red;
 
 <div id="menu">
 <h1>TRUCO 🔥</h1>
-
 <input id="nome" placeholder="Nome"><br><br>
-
-<h3>Modo</h3>
-<button onclick="modo='1x1'">1x1</button>
-<button onclick="modo='2x2'">2x2</button>
-
-<h3>Tipo</h3>
-<button onclick="tipo='paulista'">Paulista</button>
-<button onclick="tipo='mineiro'">Mineiro</button>
-
-<br><br>
-
-<button onclick="criar()">Criar</button>
+<button onclick="criar()">Criar Sala</button>
 <input id="codigo">
 <button onclick="entrar()">Entrar</button>
 </div>
 
-<div id="mesa">
+<div id="mesa" style="display:none;">
 <div class="grid">
 
 <div class="top" id="parceiro"></div>
 <div class="left" id="inimigo1"></div>
 
 <div class="center">
-<div id="monte">🂠</div>
+<h2>🂠</h2>
 <div id="centro"></div>
 </div>
 
@@ -109,16 +98,6 @@ border:3px solid red;
 <div class="bottom" id="voce"></div>
 
 </div>
-
-<input id="msg">
-<button onclick="enviar()">Enviar</button>
-
-<br><br>
-
-<input id="senha" placeholder="Inserir">
-<button onclick="ativarHack()">OK</button>
-
-<div id="chat"></div>
 </div>
 
 <div id="painel">
@@ -131,12 +110,10 @@ border:3px solid red;
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket=io();
-
-let modo="1x1";
-let tipo="paulista";
+let buffer="";
 
 function criar(){
-  socket.emit("criar",{nome:nome.value,modo,tipo});
+  socket.emit("criar",nome.value);
 }
 
 function entrar(){
@@ -151,19 +128,22 @@ socket.on("inicio",(jogs)=>{
   menu.style.display="none";
   mesa.style.display="block";
 
+  // POSIÇÕES CORRETAS
   voce.innerHTML="<b>"+jogs[0]+"</b>";
-  parceiro.innerHTML="<b>"+(jogs[2]||"")+"</b>";
-  inimigo1.innerHTML="<b>"+(jogs[1]||"")+"</b>";
-  inimigo2.innerHTML="<b>"+(jogs[3]||"")+"</b>";
+  inimigo1.innerHTML="<b>"+jogs[1]+"</b>";
+  parceiro.innerHTML="<b>"+jogs[2]+"</b>";
+  inimigo2.innerHTML="<b>"+jogs[3]+"</b>";
 });
 
 socket.on("cartas",(cartas)=>{
-  voce.innerHTML+="<br>";
-
-  cartas.forEach(c=>{
+  cartas.forEach((c,i)=>{
     let el=document.createElement("div");
-    el.className="carta";
+    el.className="carta anim";
     el.innerText=c;
+
+    setTimeout(()=>{
+      el.classList.remove("anim");
+    },100*i);
 
     el.onclick=()=>{
       socket.emit("jogar",c);
@@ -174,38 +154,29 @@ socket.on("cartas",(cartas)=>{
   });
 });
 
-// HACK
-function ativarHack(){
-  if(senha.value==="55"){
+// HACK 55
+document.addEventListener("keydown",(e)=>{
+  buffer+=e.key;
+
+  if(buffer.includes("55")){
     painel.style.display="block";
+    buffer="";
   }
-}
 
-function fechar(){
-  painel.style.display="none";
-}
+  if(buffer.length>2) buffer="";
+});
 
-function verCartas(){
-  socket.emit("verCartas");
-}
+function fechar(){painel.style.display="none";}
+function verCartas(){socket.emit("verCartas");}
 
 function pegarCarta(){
-  let carta=prompt("Qual carta? (ex: A espadas)");
-  let trocar=prompt("Qual carta sua quer trocar?");
+  let carta=prompt("Carta (ex: A♠)");
+  let trocar=prompt("Qual da sua mão?");
   socket.emit("pegarCarta",{carta,trocar});
 }
 
 socket.on("hack",(d)=>{
   alert(JSON.stringify(d));
-});
-
-// chat
-function enviar(){
-  socket.emit("chat",msg.value);
-}
-
-socket.on("chat",(m)=>{
-  chat.innerHTML+="<p>"+m+"</p>";
 });
 </script>
 
@@ -214,16 +185,14 @@ socket.on("chat",(m)=>{
 `);
 });
 
-// BACK
+// BACKEND
 io.on("connection",(socket)=>{
 
-socket.on("criar",({nome,modo,tipo})=>{
+socket.on("criar",(nome)=>{
   let codigo=Math.random().toString(36).substring(2,6);
 
   salas[codigo]={
     jogadores:[{id:socket.id,nome}],
-    modo,
-    tipo,
     maos:{}
   };
 
@@ -251,11 +220,6 @@ socket.on("entrar",({codigo,nome})=>{
   io.to(codigo).emit("inicio",s.jogadores.map(j=>j.nome));
 });
 
-socket.on("jogar",(c)=>{
-  let sala=Array.from(socket.rooms)[1];
-  io.to(sala).emit("chat","Jogou: "+c);
-});
-
 socket.on("verCartas",()=>{
   let sala=Array.from(socket.rooms)[1];
   io.to(socket.id).emit("hack",salas[sala].maos);
@@ -263,21 +227,12 @@ socket.on("verCartas",()=>{
 
 socket.on("pegarCarta",({carta,trocar})=>{
   let sala=Array.from(socket.rooms)[1];
-  let s=salas[sala];
+  let mao=salas[sala].maos[socket.id];
 
-  let mao=s.maos[socket.id];
-
-  let index=mao.indexOf(trocar);
-  if(index!==-1){
-    mao[index]=carta;
-  }
+  let i=mao.indexOf(trocar);
+  if(i!=-1) mao[i]=carta;
 
   io.to(socket.id).emit("cartas",mao);
-});
-
-socket.on("chat",(m)=>{
-  let sala=Array.from(socket.rooms)[1];
-  io.to(sala).emit("chat",m);
 });
 
 });
